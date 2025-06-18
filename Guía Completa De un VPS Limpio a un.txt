@@ -1,0 +1,215 @@
+Guía Completa: De un VPS Limpio a un Sitio Seguro con HTTPS y Múltiples Rutas
+
+Paso 1: Instalación de Nginx y el Firewall
+
+Primero, preparamos el servidor con el software necesario.
+
+1.Actualizar el sistema:
+
+sudo apt update
+sudo apt upgrade -y
+
+2.Instalar Nginx:
+
+sudo apt install nginx -y
+
+Verificar el Estado de Nginx
+
+systemctl status nginx
+
+3.Configurar el Firewall (ufw):
+
+sudo apt install ufw -y
+sudo ufw allow OpenSSH       # ¡Muy importante para no perder el acceso!
+sudo ufw allow 'Nginx Full' # Permite tráfico en puertos 80 (HTTP) y 443 (HTTPS)
+sudo ufw enable             # Activa el firewall (escribe 'y' y presiona Enter)
+
+Paso 2: Organización de los Archivos del Sitio Web
+
+Movemos tus archivos a la ubicación estándar y segura.
+
+1.Crear el directorio web:
+
+sudo mkdir -p /var/www/agrocopilot.xyz
+
+2.Mover tu index.html:
+
+# Asumiendo que index.html está en /root/home/
+sudo mv /root/home/index.html /var/www/agrocopilot.xyz/
+
+3.Asignar permisos correctos:
+
+sudo chown -R www-data:www-data /var/www/agrocopilot.xyz
+sudo chmod -R 755 /var/www/agrocopilot.xyz
+
+Paso 3: Configuración Inicial de Nginx para HTTP
+
+Crearemos el archivo de configuración para que Nginx sepa cómo manejar tu dominio. Este paso es crucial para que Certbot pueda verificar tu dominio.
+
+1.Crea el archivo de configuración de Nginx:
+
+sudo nano /etc/nginx/sites-available/agrocopilot.xyz
+
+2.Pega la siguiente configuración base. Fíjate que solo configuramos el listen 80 (HTTP) por ahora. Certbot se encargará del resto.
+
+server {
+    listen 80;
+    listen [::]:80;
+
+    # Directorio raíz para el dominio principal
+    root /var/www/agrocopilot.xyz;
+    index index.html index.htm;
+
+    # Nombres de dominio que debe atender este bloque
+    server_name agrocopilot.xyz www.agrocopilot.xyz;
+
+    # Regla para el dominio raíz (ej: https://agrocopilot.xyz/)
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Regla para la aplicación scraper
+    location /scraper/ {
+        proxy_pass http://127.0.0.1:5000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+ 3.Guarda y cierra el editor (Ctrl+X, Y, Enter).
+
+4.Activa esta configuración:
+
+sudo ln -s /etc/nginx/sites-available/agrocopilot.xyz /etc/nginx/sites-enabled/
+
+
+5.Prueba la sintaxis y recarga Nginx:
+
+sudo nginx -t
+sudo systemctl reload nginx
+
+En este punto, tu sitio debería funcionar en http://agrocopilot.xyz
+
+
+Paso 4: Instalación de Certificados SSL con Certbot (La Magia de HTTPS)
+
+Ahora que Nginx está sirviendo tu sitio por HTTP, podemos usar Certbot para asegurarlo.
+
+1.Instalar Certbot y el plugin de Nginx:
+
+sudo apt install certbot python3-certbot-nginx -y
+
+2.Ejecutar Certbot para obtener y configurar el certificado:
+
+Este comando es el más importante. Le dice a Certbot que use el plugin de Nginx (--nginx), y que quiere un certificado que cubra tanto el dominio raíz como el subdominio www.
+
+sudo certbot --nginx -d agrocopilot.xyz -d www.agrocopilot.xyz
+
+3.Seguir las instrucciones de Certbot:
+Email: Te pedirá una dirección de correo electrónico para notificaciones urgentes y de renovación.
+Términos de servicio: Deberás aceptar los términos escribiendo A (o Y) y presionando Enter.
+Boletín informativo: Te preguntará si quieres compartir tu email con la EFF. Puedes decir Y (sí) o N (no).
+¡La pregunta clave! Redirección a HTTPS:
+
+Please choose whether or not to redirect HTTP traffic to HTTPS, removing HTTP access.
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+1: No redirect - Make no further changes to the webserver configuration.
+2: Redirect - Make all requests redirect to secure HTTPS access. Choose this for
+new sites, or if you're confident your site works on HTTPS. You can undo this
+change by editing your web server's configuration.
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel):
+
+Elige la opción 2 y presiona Enter. Esto es lo que configura la redirección automática de HTTP a HTTPS.
+Si todo sale bien, verás un mensaje de felicitaciones indicando que tu certificado ha sido instalado y dónde se encuentra.
+
+Paso 5: Verificación Final y Renovación Automática
+
+1.¿Qué ha hecho Certbot?
+Ha modificado tu archivo /etc/nginx/sites-available/agrocopilot.xyz automáticamente. Si lo abres, verás que ahora tiene líneas para listen 443 ssl, rutas a los archivos del certificado (ssl_certificate y ssl_certificate_key) y un bloque server adicional que se encarga de la redirección 301 de HTTP a HTTPS.
+
+2.Prueba tu sitio:
+Abre tu navegador y ve a http://agrocopilot.xyz. Deberías ser redirigido automáticamente a https://agrocopilot.xyz y ver un candado de seguridad.
+
+3.Renovación automática:
+La mejor parte de Certbot es que configura una tarea automática (cron job o systemd timer) que intentará renovar tus certificados antes de que expiren (duran 90 días). Puedes probar que el proceso de renovación funciona con este comando:
+
+sudo certbot renew --dry-run
+
+Si no da errores, estás listo. No necesitas hacer nada más; tus certificados se mantendrán actualizados solos.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
